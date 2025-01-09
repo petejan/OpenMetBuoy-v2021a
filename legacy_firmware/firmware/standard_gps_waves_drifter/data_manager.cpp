@@ -20,6 +20,10 @@ DataEntry const & DataManager::get_entry(size_t index) const {
     return etl_vector_data[index];
 }
 
+void * DataManager::get_vector(void) const {
+    return (void *)&etl_vector_data[0];
+}
+
 void DataManager::print_information(void) const{
     Serial.print("data manager size: "); Serial.print(size()); Serial.print(F(" | total capacity ")); Serial.println(etl_vector_data.capacity());
     Serial.println(F("START CONTENT DATA MANAGER"));

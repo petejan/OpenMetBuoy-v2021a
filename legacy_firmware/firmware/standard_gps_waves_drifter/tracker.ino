@@ -11,6 +11,10 @@
 #include "data_manager.h"
 #include "wave_analyzer.h"
 #include "thermistors_manager.h"
+#include "sd_manager.h"
+
+#include "RTC.h" // Include RTC library included with the Aruino_Apollo3 core
+APM3_RTC myRTC; // Create instance of RTC class
 
 // TODO: board_imu_manger -> board_imu_manager
 
@@ -34,7 +38,14 @@ void setup(){
   Serial.println("----------------");
   Serial.println("OpenMetBuoy " __DATE__ " " __TIME__ );
   Serial.println();
- 
+
+  // Easily set RTC using the system __DATE__ and __TIME__ macros from compiler
+  //myRTC.setToCompilerTime();
+
+  myRTC.getTime();
+
+  Serial.printf("It is now %04d/%02d/%02d %02d:%02d:%02d\r\n", myRTC.year+2000, myRTC.month, myRTC.dayOfMonth, myRTC.hour, myRTC.minute, myRTC.seconds);
+
   // offer a print of the params used for the setup of the instrument
   print_params();
 
@@ -67,98 +78,96 @@ void setup(){
     iridium_manager.attempt_transmit_gps_fixes(1);
     sleep_for_seconds(5);
   }
-
   // i2c scan
-  if (true){
-      byte error, address;
-      int nDevices;
-      uint8_t waiByte[1];
+  if (false){
+    turn_gnss_on();
+    delay(1000); // Give it time to power up
+    wdt.restart();
 
-      Serial.println("Scanning... AstemisWire");
+    byte error, address;
+    int nDevices;
+    uint8_t waiByte[1];
+    ArtemisWire.setClock(400000);
 
-      nDevices = 0;
-      for(address = 1; address < 127; address++ ) {
-          // The i2c_scanner uses the return value of
-          // the Write.endTransmisstion to see if
-          // a device did acknowledge to the address.
-          ArtemisWire.beginTransmission(address);
-          ArtemisWire.write(0x0F);                                   // Set register address, WHOI_AM_I
-          error = ArtemisWire.endTransmission(false);
+    Serial.println("Scanning... ArtemisWire");
 
-          if (error == 0){
-              Serial.print("I2C device found at address 0x");
-              if (address<16)
-                  Serial.print("0");
-              Serial.print(address,HEX);
-              Serial.println("  !");
+    nDevices = 0;
+    for(address = 1; address < 127; address++ ) {
+        // The i2c_scanner uses the return value of
+        // the Write.endTransmisstion to see if
+        // a device did acknowledge to the address.
+        ArtemisWire.beginTransmission(address);
+        ArtemisWire.write(0x0F);                                   // Set register address, WHOI_AM_I
+        error = ArtemisWire.endTransmission(false);
 
-              ArtemisWire.requestFrom(address, 1, true);     // Request bytes, release I2C-bus after data read
-              int i = 0;                                             //
-              while(ArtemisWire.available()) {
-                  if (i < 1)
-                      waiByte[i++] = ArtemisWire.read();                               // Add data to array
-              }
-              Serial.print("WHOI Byte 0x");
-              if (waiByte[0]<16)
-                  Serial.print("0");
-              Serial.println(waiByte[0],HEX);
+        if (error == 0){
+            Serial.printf("I2C device found at address 0x%02x - ", address);
 
-              nDevices++;
-          }
+            ArtemisWire.requestFrom(address, 1, true);     // Request bytes, release I2C-bus after data read
+            int i = 0;                                             //
+            while(ArtemisWire.available()) {
+                if (i < 1)
+                    waiByte[i++] = ArtemisWire.read();                               // Add data to array
+            }
+            Serial.printf("%d WHOI Byte 0x%02x\r\n", i, waiByte[0]);
+
+            nDevices++;
+        }
 #ifdef PRINT_I2C_ERRORS
-          else if (error==4) {
-              Serial.print("Unknown error at address 0x");
-              if (address<16)
-                  Serial.print("0");
-              Serial.println(address,HEX);
-          }    
+        else if (error==4) {
+            Serial.print("Unknown error at address 0x");
+            if (address<16)
+                Serial.print("0");
+            Serial.println(address,HEX);
+        }    
 #endif
-      }
-      if (nDevices == 0)
-          Serial.println("No I2C devices found\n");
+    }
+    if (nDevices == 0)
+        Serial.println("AstemisWire No I2C devices found\n");
 
+    Serial.println("Scanning...Wire1");
 
-      Serial.println("Scanning...Wire1");
+    Wire1.begin();
+    Serial.println(F("Wire1 started"));
 
-      Wire1.begin();
-      Serial.println(F("Wire1 started"));
-      turn_gnss_on();
-      delay(1000); // Give it time to power up
-      wdt.restart();
+    nDevices = 0;
+    for(address = 1; address < 127; address++ ) {
+        // The i2c_scanner uses the return value of
+        // the Write.endTransmisstion to see if
+        // a device did acknowledge to the address.
+        Wire1.beginTransmission(address);
+        error = Wire1.endTransmission(false);
 
-      nDevices = 0;
-      for(address = 1; address < 127; address++ ) {
-          // The i2c_scanner uses the return value of
-          // the Write.endTransmisstion to see if
-          // a device did acknowledge to the address.
-          Wire1.beginTransmission(address);
-          error = Wire1.endTransmission(false);
+        if (error == 0) {
+            Serial.printf("I2C device found at address 0x%02x\r\n", address);
 
-          if (error == 0) {
-              Serial.print("I2C device found at address 0x");
-              if (address<16)
-                  Serial.print("0");
-              Serial.print(address,HEX);
-              Serial.println("  !");
-
-              nDevices++;
-          }
+            nDevices++;
+        }
 #ifdef PRINT_I2C_ERRORS
-          else if (error==4) {
-              Serial.print("Unknown error at address 0x");
-              if (address<16)
-                  Serial.print("0");
-              Serial.println(address,HEX);
-          }    
+        else if (error==4) {
+            Serial.print("Unknown error at address 0x");
+            if (address<16)
+                Serial.print("0");
+            Serial.println(address,HEX);
+        }    
 #endif
-      }
-      if (nDevices == 0)
-          Serial.println("No I2C devices found\n");
+    }
+    if (nDevices == 0)
+        Serial.println("Wire1 No I2C devices found");
 
-      Serial.println("-----------------");
+    turn_gnss_off();
+
+    Serial.println("-----------------");
   }
 
-  // to thest the functionalities: sleep, waves measurements
+  // SD Card check
+  if (false){
+    sd_manager.start();
+
+    Serial.println("-----------------");
+  }
+
+  // to test the functionalities: sleep, waves measurements
   if (false){
     sleep_for_seconds(5);
     board_wave_analyzer.gather_and_analyze_wave_data();
@@ -176,7 +185,7 @@ void setup(){
   // attempt to get an initial GNSS fix, to both 1) check that sky access, 2) know when to wake up
   // if get the fix, also (attempt to) transmit it at once to let know we booted
   // if cannot get an initial fix, we do not have a clear view of the sky: sleep and re-try later
-  while (true){
+  while (false){
     blink_LED_n_times(2, 1.0);
 
     Serial.println(F("attempt initial fix"));
@@ -222,6 +231,10 @@ void setup(){
     delay(100);
   }
 
+  myRTC.getTime();
+
+  Serial.printf("It is now %04d/%02d/%02d %02d:%02d:%02d\r\n", myRTC.year+2000, myRTC.month, myRTC.dayOfMonth, myRTC.hour, myRTC.minute, myRTC.seconds);
+
   // --------------------------------------------------------------------------------
   // done starting up
 
@@ -237,7 +250,7 @@ void loop(){
 
   // how long should we sleep? The duration between 2 measurements, minus the time we are already over the previous measurement time
   sleep_for_seconds(
-    interval_between_gnss_measurements_seconds - (board_time_manager.get_posix_timestamp() % interval_between_gnss_measurements_seconds),
+    modifiable_interval_between_gnss_measurements_seconds - (board_time_manager.get_posix_timestamp() % modifiable_interval_between_gnss_measurements_seconds),
     2
   );
 
@@ -286,6 +299,12 @@ void loop(){
   bool any_successful_transmit {false};
 
   if (gnss_fix){
+    Serial.printf("gnss time %04d/%02d/%02d %02d:%02d:%02d\r\n", gnss_manager.year, gnss_manager.month, gnss_manager.day, gnss_manager.hour, gnss_manager.minute, gnss_manager.second);
+
+    myRTC.getTime();
+
+    Serial.printf("rtc  time %04d/%02d/%02d %02d:%02d:%02d\r\n", myRTC.year+2000, myRTC.month, myRTC.dayOfMonth, myRTC.hour, myRTC.minute, myRTC.seconds);
+
     Serial.println(F("got GNSS fix, so good chances that iridium is good"));
     Serial.println(F("start transmission burst"));
 
@@ -305,7 +324,7 @@ void loop(){
 
       bool anything_more_to_attempt {false};
 
-      iridium_manager.attempt_transmit_gps_fixes(min_nbr_of_fix_per_message);
+      iridium_manager.attempt_transmit_gps_fixes(modifiable_min_nbr_of_fix_per_message);
       anything_more_to_attempt |= iridium_manager.last_attempt_tried_sending();
       any_successful_transmit |= iridium_manager.last_communication_was_successful();
       delay(500);
@@ -383,5 +402,9 @@ void loop(){
   //--------------------------------------------------------------------------------
   // the end for this loop
   wdt.restart();
+
+  myRTC.getTime();
+
+  Serial.printf("end of loop %04d/%02d/%02d %02d:%02d:%02d\r\n", myRTC.year+2000, myRTC.month, myRTC.dayOfMonth, myRTC.hour, myRTC.minute, myRTC.seconds);
 }
 

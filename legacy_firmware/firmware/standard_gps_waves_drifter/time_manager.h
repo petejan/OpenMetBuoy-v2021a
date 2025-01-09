@@ -4,6 +4,7 @@
 #include "Arduino.h"
 #include "TimeLib.h"
 #include "helpers.h"
+#include "RTC.h" // Include RTC library included with the Aruino_Apollo3 core
 
 class TimeManager{
   public:
@@ -34,6 +35,7 @@ struct struct_YMDHMS{
 // this is using conventions where month and day start at 1, as is common
 time_t& posix_timestamp_from_YMDHMS(int year, int month, int day, int hour, int minute, int second);
 struct_YMDHMS& YMDHMS_from_posix_timestamp(time_t posix_timestamp);
+extern void setRTC(time_t posix_timestamp);
 
 extern TimeManager board_time_manager;
 extern volatile time_t posix_timestamp; // a timestamp
@@ -41,5 +43,7 @@ extern volatile time_t posix_timestamp; // a timestamp
 extern tmElements_t common_working_time_struct;
 extern time_t common_working_posix_timestamp;
 extern struct_YMDHMS common_working_struct_YMDHMS;
+
+extern APM3_RTC myRTC; // get instance of RTC class
 
 #endif

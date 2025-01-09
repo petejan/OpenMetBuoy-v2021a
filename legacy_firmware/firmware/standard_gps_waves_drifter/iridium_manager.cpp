@@ -1,4 +1,5 @@
 #include "iridium_manager.h"
+#include "sd_manager.h"
 
 unsigned long millis_last_callback {0};
 unsigned long millis_iridium_callback_reset {0};
@@ -19,6 +20,8 @@ bool IridiumManager::send_receive_message(unsigned long timeout_cap_charging_sec
 
     Serial.println(F("iridium attempt send receive message"));
     print_vector_uc(iridium_tx_buffer);
+
+    sd_manager.write("Iridium Message", &iridium_tx_buffer, iridium_tx_buffer.size());
 
     wdt.restart();
     turn_gnss_off();
@@ -144,6 +147,7 @@ bool IridiumManager::send_receive_message(unsigned long timeout_cap_charging_sec
     // for this, test for reboot need already here, as seems that sometimes receives the message, but it is no
     // registered as valid by the modem (some ACK lost on the way back?)
     reboot_if_requested_through_iridium();
+    read_apply_iridium_instructions();    
 
     // NOTE: over time, this has become quite ugly, with lots of repetitions etc; would need a good refactoring!
     // TODO: refactor switch off the iridium modem and call only one...
@@ -312,7 +316,8 @@ void IridiumManager::reboot_if_requested_through_iridium(void){
 
         if (iridium_rx_buffer.size() >= 4){
 
-            if (iridium_rx_buffer[0] == 'B' && iridium_rx_buffer[1] == 'O' && iridium_rx_buffer[2] == 'O' && iridium_rx_buffer[3] == 'T'){
+            ;
+            if (strncmp((const char *)iridium_rx_buffer.data(), "BOOT", 4) == 0){
                 Serial.println(F("BOOT message, reboot!"));
                 while (true) {;}
             }
@@ -322,6 +327,127 @@ void IridiumManager::reboot_if_requested_through_iridium(void){
             Serial.println(F("too short to be a reboot"));
         }
     }
+}
+
+int IridiumManager::read_value_from_command(size_t rx_ind_start){
+    char crrt_buff[3];
+    crrt_buff[0] = '0';
+    crrt_buff[1] = '1';
+    crrt_buff[2] = '\0';
+    crrt_buff[0] = iridium_rx_buffer[rx_ind_start+0];
+    crrt_buff[1] = iridium_rx_buffer[rx_ind_start+1];
+    int res = atoi(crrt_buff);
+    return res;
+}
+
+void IridiumManager::read_apply_iridium_instructions(void) {
+  Serial.println(F("read apply iridium instructions"));
+
+  size_t crrt_ind {0};
+
+  // do we have enough chars left that worth to try to parse?
+  while (iridium_rx_buffer.size() - crrt_ind >= 7){
+   Serial.print(F("parse from start ind: ")); Serial.print(crrt_ind); Serial.print(F(" content ASCII ")); Serial.println(iridium_rx_buffer[crrt_ind]);
+
+   // char at 0 and 6 must be ';' and '$', otherwise this is not a message we are trying to parse, try to parse one further in
+   if (iridium_rx_buffer[crrt_ind+0] == '$' && iridium_rx_buffer[crrt_ind+6] == ';'){
+    Serial.println(F("valid message separators..."));
+
+    int command_value = read_value_from_command(crrt_ind+4);
+    Serial.print(F("command_value: ")); Serial.println(command_value);
+
+    // check if one of the accepted message kinds, and in this case, parse and apply
+
+    if (iridium_rx_buffer[crrt_ind+1] == 'G' && iridium_rx_buffer[crrt_ind+2] == 'F' && iridium_rx_buffer[crrt_ind+3] == 'Q'){
+       Serial.println(F("this is a GFQ message"));
+
+       // we must take a GPS fix at least each 6 hours
+       if (command_value <= 6*4){
+        Serial.println(F("command value ok, apply it."));
+        modifiable_interval_between_gnss_measurements_seconds = 15 * 60 * command_value;
+       }
+       else {
+         Serial.println(F("command value is above threshold; ignore"));
+       }
+    }
+
+    if (iridium_rx_buffer[crrt_ind+1] == 'W' && iridium_rx_buffer[crrt_ind+2] == 'F' && iridium_rx_buffer[crrt_ind+3] == 'Q'){
+       Serial.println(F("this is a WFQ message"));
+
+       // we can be very loose on how often measure waves, since we can always reach back using the GNSS
+       // still put a limit of 12 hours
+       if (command_value <= 12*2){
+        Serial.println(F("command value ok, apply it."));
+        modifiable_interval_between_wave_spectra_measurements = 30 * 60 * command_value;
+       }
+       else {
+         Serial.println(F("command value is above threshold; ignore"));
+       }
+    }
+
+    if (iridium_rx_buffer[crrt_ind+1] == 'T' && iridium_rx_buffer[crrt_ind+2] == 'F' && iridium_rx_buffer[crrt_ind+3] == 'Q'){
+       Serial.println(F("this is a TFQ message"));
+
+       // idem as GPS; not too critical, still put a limit of 12 hours
+       if (command_value <= 12*2){
+        Serial.println(F("command value ok, apply it."));
+        modifiable_interval_between_thermistors_measurements_seconds = 30 * 60 * command_value;
+       }
+       else {
+         Serial.println(F("command value is above threshold; ignore"));
+       }
+    }
+
+    if (iridium_rx_buffer[crrt_ind+1] == 'G' && iridium_rx_buffer[crrt_ind+2] == 'M' && iridium_rx_buffer[crrt_ind+3] == 'L'){
+       Serial.println(F("this is a GML message"));
+
+       if (command_value <= max_nbr_GPS_fixes_per_message){
+        Serial.println(F("command value ok, apply it."));
+        modifiable_min_nbr_of_fix_per_message = command_value;
+       }
+       else {
+         Serial.println(F("command value is above threshold; ignore"));
+       }
+    }
+
+    // make ready to read the next packet
+    crrt_ind += 7;
+   }
+
+   else{
+    Serial.println(F("not a valid message"));
+    crrt_ind += 1;
+    continue;
+   }
+  }
+
+  // quality check on the logics; make sure that we do not loose access to the instrument for all time in the future!!
+  // for this, we make sure that GNSS (which is the "most often active" measurement) is attempting to transmit at least each 6 hours
+  // that means 1) taking at least 1 measurement each 6 hours
+  if (modifiable_interval_between_gnss_measurements_seconds > 6 * 60 * 60){
+    modifiable_interval_between_gnss_measurements_seconds = 6 * 60 * 60;
+  }
+  if (modifiable_interval_between_gnss_measurements_seconds < 1 * 15 * 60){
+    modifiable_interval_between_gnss_measurements_seconds = 15 * 60;
+  }
+  // 2) that the time between measurements times the min nbr of messages per buffer is at most 6 hours
+  // we do not make sure that waves and thermistors are enabled as a multiple of the GNSS; this can be made sure of
+  // by the user, and is not as critical (as will not loose contact with the instrument anyways)
+  if (modifiable_min_nbr_of_fix_per_message < 1){
+        modifiable_min_nbr_of_fix_per_message = 1;
+  }
+  if (modifiable_interval_between_gnss_measurements_seconds * modifiable_min_nbr_of_fix_per_message > 6 * 60 * 60){
+        modifiable_min_nbr_of_fix_per_message = 6 * 60 * 60 / modifiable_interval_between_gnss_measurements_seconds;
+  }
+  if (modifiable_min_nbr_of_fix_per_message > max_nbr_GPS_fixes_per_message){
+        modifiable_min_nbr_of_fix_per_message = max_nbr_GPS_fixes_per_message - 1;
+  }
+
+  Serial.println(F("the updated modifiable parameters are now:"));
+  Serial.print(F("modifiable_interval_between_gnss_measurements_seconds ")); Serial.println(modifiable_interval_between_gnss_measurements_seconds);
+  Serial.print(F("modifiable_min_nbr_of_fix_per_message ")); Serial.println(modifiable_min_nbr_of_fix_per_message);
+  Serial.print(F("modifiable_interval_between_wave_spectra_measurements ")); Serial.println(modifiable_interval_between_wave_spectra_measurements);
+  Serial.print(F("modifiable_interval_between_thermistors_measurements_seconds ")); Serial.println(modifiable_interval_between_thermistors_measurements_seconds);
 }
 
 bool IridiumManager::last_communication_was_successful(void) const {

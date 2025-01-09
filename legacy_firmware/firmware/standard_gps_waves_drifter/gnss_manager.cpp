@@ -1,8 +1,11 @@
 #include "gnss_manager.h"
+#include "sd_manager.h"
 
 SFE_UBLOX_GNSS gnss;
 
 GNSS_Manager gnss_manager;
+
+#define GNSS_WIRE Wire1
 
 bool GNSS_Manager::get_a_fix(unsigned long timeout_seconds, bool set_RTC_time, bool perform_full_start, bool perform_full_stop){
   wdt.restart();
@@ -14,8 +17,10 @@ bool GNSS_Manager::get_a_fix(unsigned long timeout_seconds, bool set_RTC_time, b
     // power things up and connect to the GNSS; if fail several time, restart the board
     bool gnss_startup {false};
     for (int i=0; i<5; i++){
-      Wire1.begin();
-      Serial.println(F("Wire1 started"));
+      GNSS_WIRE.begin();
+      GNSS_WIRE.setClock(400000);
+
+      Serial.println(F("GNSS_WIRE started"));
       turn_gnss_on();
       delay(1000); // Give it time to power up
       wdt.restart();
@@ -23,12 +28,12 @@ bool GNSS_Manager::get_a_fix(unsigned long timeout_seconds, bool set_RTC_time, b
       Serial.println(F("gnss powered up"));
       Serial.flush();
 
-      if (!gnss.begin(Wire1)){
+      if (!gnss.begin(GNSS_WIRE)){
         Serial.println(F("problem starting GNSS"));
         
         // power things down
         turn_gnss_off();
-        Wire1.end();
+        GNSS_WIRE.end();
         delay(500);
         continue;
       }
@@ -131,7 +136,7 @@ bool GNSS_Manager::get_a_fix(unsigned long timeout_seconds, bool set_RTC_time, b
   // power things down
   if (perform_full_stop){
     turn_gnss_off();
-    Wire1.end();
+    GNSS_WIRE.end();
   }
 
   wdt.restart();
@@ -180,7 +185,7 @@ bool GNSS_Manager::get_and_push_fix(unsigned long timeout_seconds){
 
     // we turn off by hand, since we did not perform full start stop in the loop
     turn_gnss_off();
-    Wire1.end();
+    GNSS_WIRE.end();
 
     // then, get the values for the filtered lat, lon, timestamp
     long crrt_latitude = accurate_sigma_filter<long>(crrt_accumulator_latitude, 2.0);
@@ -205,14 +210,18 @@ bool GNSS_Manager::get_and_push_fix(unsigned long timeout_seconds){
     Serial.print(crrt_fix.longitude);
     Serial.println();
 
+    sd_manager.write("GPS Fix", &crrt_fix, sizeof(crrt_fix));
+
     Serial.println(F("end with GNSS buffer:"));
     print_GNSS_fixes_buffer();
 
     return true;
   }
 
+  gnss.powerOff(0);
+
   turn_gnss_off();
-  Wire1.end();
+  GNSS_WIRE.end();
 
   Serial.println(F("no fix, no push to buffer"));
 

@@ -3,8 +3,23 @@
 
 #include "Arduino.h"
 
+#define IMU_TYPE 1 // 1 - ISM330, 2 - LSM6DS3, 3 - LSM6DSL
+
+#include "params.h"
+
+#if IMU_TYPE == 1
 #include <Adafruit_ISM330DHCX.h>
+#endif
+#if IMU_TYPE == 2
+#include <Adafruit_LSM6DS3.h>
+#endif
+#if IMU_TYPE == 3
+#include <Adafruit_LSM6DSL.h>
+#endif
+
+#ifdef USE_MAG
 #include <Adafruit_LIS3MDL.h>
+#endif
 #include <Adafruit_Sensor.h>
 
 #include <Adafruit_AHRS.h>
@@ -15,7 +30,6 @@
 
 #include "statistical_processing.h"
 
-#include "params.h"
 #include "board_control.h"
 
 #include "watchdog_manager.h"
@@ -107,7 +121,9 @@ class IMU_Manager{
         sensors_event_t accel;
         sensors_event_t gyro;
         sensors_event_t temp;
+#ifdef USE_MAG
         sensors_event_t mag; 
+#endif
 
         float dummy_inout;
 
@@ -119,8 +135,19 @@ class IMU_Manager{
 };
 
 extern QWIIC_POWER mySwitch;
+#if IMU_TYPE == 1
 extern Adafruit_ISM330DHCX ism330dhcx;
+#endif
+#if IMU_TYPE == 2
+extern Adafruit_LSM6DS3 ism330dhcx;
+#endif
+#if IMU_TYPE == 3
+extern Adafruit_LSM6DSL ism330dhcx;
+#endif
+
+#ifdef USE_MAG
 extern Adafruit_LIS3MDL lis3mdl;
+#endif
 extern Adafruit_NXPSensorFusion Kalman_filter;
 extern IMU_Manager board_imu_manger;
 

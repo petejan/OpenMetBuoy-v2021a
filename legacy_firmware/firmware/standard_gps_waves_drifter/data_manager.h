@@ -21,6 +21,7 @@ class DataManager{
         void push_back_entry(DataEntry const & data_entry);
         size_t size(void) const;
         DataEntry const & get_entry(size_t index) const;
+        void *get_vector(void) const;
         void print_information(void) const;
         static constexpr size_t max_data_size {total_number_of_samples + 100};  // 20 minutes, at 10 Hz, with a bit of margin
     private:

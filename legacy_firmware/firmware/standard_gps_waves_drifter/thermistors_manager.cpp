@@ -527,9 +527,9 @@ void Thermistors_Manager::clear_number_sent_packets(size_t number_of_packets_to_
 }
 
 bool Thermistors_Manager::time_to_measure_thermistors(void) const{
-  long modulo_time_result = (board_time_manager.get_posix_timestamp() % interval_between_thermistors_measurements_seconds);
+  long modulo_time_result = (board_time_manager.get_posix_timestamp() % modifiable_interval_between_thermistors_measurements_seconds);
   bool is_within = (modulo_time_result < tolerance_seconds_start_thermistors_measurements) || 
-                       (interval_between_wave_spectra_measurements - modulo_time_result < tolerance_seconds_start_thermistors_measurements);
+                       (modifiable_interval_between_gnss_measurements_seconds - modulo_time_result < tolerance_seconds_start_thermistors_measurements);
   return(is_within);
 }
 

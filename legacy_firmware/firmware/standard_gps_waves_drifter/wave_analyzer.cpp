@@ -1,4 +1,5 @@
 #include "wave_analyzer.h"
+#include "sd_manager.h"
 
 WaveAnalyzer board_wave_analyzer;
 
@@ -72,14 +73,16 @@ bool WaveAnalyzer::gather_imu_data(void){
       }
       board_data_manager.push_back_entry(DataEntry{acc_D});
 
-      Serial.print(millis()); Serial.print(F("ms | nmeas "));
-      Serial.print(sample); Serial.print(F(" | "));
-      Serial.print(acc_D); 
+      if ((sample % 200) == 0)
+      {
+        unsigned long m = millis();
+        Serial.printf("%02d:%02d.%04d | nmeas %-5d | %-4.2f", (m / 60000), (m / 1000) % 60, m % 1000, sample, acc_D);
 #ifdef USE_MAG
-      Serial.print(" | ");
-      Serial.print(yaw__); 
+        Serial.print(" | ");
+        Serial.print(yaw__); 
 #endif
-      Serial.println();
+        Serial.println();
+      }
     }
 
     // stop the IMU
@@ -109,7 +112,10 @@ bool WaveAnalyzer::gather_imu_data(void){
     }
 
     board_imu_manger.stop_IMU();
+
   }
+
+  sd_manager.write("Board Data Manager", board_data_manager.get_vector(), board_data_manager.size());
 
   return true;
 }
@@ -118,7 +124,7 @@ void WaveAnalyzer::perform_welch_analysis_imu_data(void){
   spectrum_number += 1;
 
   // check that enough accel data available
-  Serial.print(F("data available has size ")); Serial.print(board_data_manager.size());
+  Serial.print(F("data available has size ")); Serial.println(board_data_manager.size());
   if (board_data_manager.size() < total_number_of_samples + 75){
     Serial.println(F("too little data, abort!"));
     return;
@@ -187,6 +193,8 @@ void WaveAnalyzer::perform_welch_analysis_imu_data(void){
     end_current_segment += fft_overlap;
   }
 
+  sd_manager.write("working_welch_spectrum", &working_welch_spectrum, sizeof(working_welch_spectrum));
+
   // generate packet and push to the list of packets to use
   
   // find the max entry in the welch spectrum
@@ -219,7 +227,7 @@ void WaveAnalyzer::perform_welch_analysis_imu_data(void){
 
     // and maybe do a bit of print...
     if (true){
-      Serial.print("ind: "); Serial.print(crrt_welch_ind); Serial.print(F(" | f [Hz] ")); Serial.print(crrt_frequency); Serial.print(F(" | Pxx ")); Serial.println(working_welch_spectrum[crrt_welch_ind]);
+      Serial.printf("ind %-2d | f [Hz] %4.2f | Pxx %5.4f\r\n", crrt_welch_ind, crrt_frequency, working_welch_spectrum[crrt_welch_ind]);
       delay(5);
       wdt.restart();
     }
@@ -267,6 +275,8 @@ void WaveAnalyzer::perform_welch_analysis_imu_data(void){
 
   // push at the end the last fix
   wave_packet_buffer.push_back(working_wave_packet);
+
+  sd_manager.write("Working wave packet", &working_wave_packet, sizeof(working_wave_packet));
 
   Serial.println(F("analysis success!"));
 }
@@ -330,9 +340,9 @@ void WaveAnalyzer::write_message_to_buffer(etl::ivector<unsigned char>& buffer){
 }
 
 bool WaveAnalyzer::time_to_measure_waves(void) const{
-  long modulo_time_result = (board_time_manager.get_posix_timestamp() % interval_between_wave_spectra_measurements);
+  long modulo_time_result = (board_time_manager.get_posix_timestamp() % modifiable_interval_between_wave_spectra_measurements);
   bool is_within = (modulo_time_result < tolerance_seconds_start_wave_measurements) || 
-                       (interval_between_wave_spectra_measurements - modulo_time_result < tolerance_seconds_start_wave_measurements);
+                       (modifiable_interval_between_wave_spectra_measurements - modulo_time_result < tolerance_seconds_start_wave_measurements);
   return(is_within);
 }
 

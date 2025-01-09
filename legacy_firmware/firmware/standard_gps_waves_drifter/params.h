@@ -24,7 +24,7 @@ constexpr unsigned long baudrate_debug_serial = 1000000;
     // put 2UL * 60UL for a first fix timeout of 2 minutes
     constexpr unsigned long timeout_first_fix_seconds = 5UL * 60UL;  // a reasonable value
     // put 6UL * 60UL * 60UL for a sleep if no initial fix of 6 hours
-    constexpr long sleep_no_initial_fix_seconds = 2L * 60L * 60L;  // for testing
+    constexpr long sleep_no_initial_fix_seconds = 1L * 60L * 60L;  // for testing
 
     // parameter for timeout of later (i.e. non first) GNSS fixes
     // put 3UL * 60UL for a later fix timeout of 3 minutes
@@ -48,6 +48,11 @@ constexpr unsigned long baudrate_debug_serial = 1000000;
     #error "Unknown deployment type"
 #endif
 
+extern long modifiable_interval_between_gnss_measurements_seconds;
+extern size_t modifiable_min_nbr_of_fix_per_message;
+extern long modifiable_interval_between_wave_spectra_measurements;
+extern long modifiable_interval_between_thermistors_measurements_seconds;
+
 // logics tests
 static_assert(max_nbr_GPS_fixes_per_message <= 25);  // 3 + 13 * 25 = 328, i.e. 25 fixes is the max that fits in 340 bytes
 static_assert(min_nbr_of_fix_per_message <= max_nbr_GPS_fixes_per_message);  // at most 8 fixes in one message
@@ -64,7 +69,7 @@ constexpr unsigned long timeout_cap_charging_seconds = 3UL * 60UL;
 constexpr int timeout_attempt_transmit_seconds {300};
 
 // uncommend the define to print additional iridium information
-#define ISBD_DIAGNOSTICS
+//#define ISBD_DIAGNOSTICS
 
 //--------------------------------------------------------------------------------
 // IMU params

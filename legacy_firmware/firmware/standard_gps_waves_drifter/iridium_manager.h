@@ -38,6 +38,32 @@ class IridiumManager{
     bool last_message_went_through {false};
 
     void reboot_if_requested_through_iridium(void);
+    int read_value_from_command(size_t);
+    void read_apply_iridium_instructions(void);
+    // there can be several such instructions send together at the same time; for this, just write several such instructions, one after the other
+    // list of supported instructions:
+    // $GFQXX; [Gps FreQuency setup: where XX is a number that indicates multiple of 15 minutes]
+    // $WFQXX; [Wave FreQuency setup: where XX is a number that indicates multiple of 30 minutes]
+    // $TFQXX; [Temperature_sensor FreQuency setup: where XX is a number that indicates multiple of 30 minutes]
+    // $GMLXX; [Gps Min message Length; the minimum number of packets in a GNSS message; this can be used to make sure there is an iridium transmission attempt now and then]
+    // for example:
+    // $GFQ01; will set to measure GPS position each 1*15 minutes; we do not allow more seldom than 
+    // $GFQ12; will set to measure GPS position each 12*15 minutes, i.e. each 180 minutes, ie each 3 hours
+    // $GFQ02;$WFQ04; will set to measure GPS position each 2*15 minutes ie each 30 minutes, and set wave measurements to measure each 4*30 minutes ie each 2 hours
+    // etc, etc
+    // NOTE that there are some soft limiations to the parameters that can be set; namely, the measurement of waves and temperature sensors
+    // should happen at the same time as GPS measurements otherwise, these may be ignored; i.e., the set of times when performing GPS measurements must be a superset of the set of times
+    // when performing waves and temperatures measurements. For example, GNSS each 30 minutes and waves each 1 hour is ok, but gnss each 4 hours and waves
+    // each hour is not ok (or rather, all will work fine, but waves will be measured each 4 hours, not each hour). This is the responsibility of the user to enforce these conditions.
+    // we put some logics test to avoid shooting yourself in the foot and / or "bricking" the instrument and making it useless :)
+    // however, still be CAREFUL with these options: you can still shoot yourself in the foot even with the safety guards (and the safety guards
+    // can always have some unexpected flaws that would let you shoot yourself in the foot badly). In particular, the instrument will check for new transmissions
+    // i.e. try to update the parameters only when having some data to transmit... I.e., if the instrument has parameters that mean that
+    // it tries to transmit only each 6 hours, you will not be able to turn higher up measurement frequency until the next message is sent and received, which in this example would be 6 hours.
+    // to avoid to shoot yourself in the foot too bad, we have some logics guards in place so that the instrument always try to transmit
+    // at least a GNSS message at least each 6 hours; i.e., IF there are no flaws in the logics guards, it should not be possible to put the instrument
+    // in such a "bad" state that it does not try to send / receive an iridium message at least once each 6 hours.
+    // But still, be careful, and double check both the formatting and the logics of your messages before sending them!!
 
   private:
     Uart iridium_serial{1, 25, 24};
